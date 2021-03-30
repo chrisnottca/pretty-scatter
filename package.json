@@ -1,0 +1,24 @@
+{
+  "name": "pretty-scatter",
+  "version": "0.0.3",
+  "description": "Arranges html elements of a common parent in a blue noise pattern so they look randomly yet equally scattered over a space.",
+  "main": "pretty-scatter.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chrisnottca/pretty-scatter.git"
+  },
+  "keywords": [
+    "bluenoise",
+    "poisson",
+    "bridson"
+  ],
+  "author": "Chris Nott",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/chrisnottca/pretty-scatter/issues"
+  },
+  "homepage": "https://github.com/chrisnottca/pretty-scatter#readme"
+}

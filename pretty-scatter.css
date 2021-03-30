@@ -1,0 +1,23 @@
+.pretty-scatter__container {
+  position: relative;
+}
+.pretty-scatter__container > * {
+  position: relative;
+  z-index: 2;
+}
+.pretty-scatter__field {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  z-index: 1;
+  overflow: hidden;
+  margin: 0 !important;
+  max-width: initial;
+}
+.pretty-scatter__field > * {
+  position: absolute;
+  display: inline;
+  transition: display 0.5s;
+}
