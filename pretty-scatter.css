@@ -19,5 +19,4 @@
 .pretty-scatter__field > * {
   position: absolute;
   display: inline;
-  transition: display 0.5s;
 }

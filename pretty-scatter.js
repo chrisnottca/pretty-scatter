@@ -9,8 +9,10 @@
 })(typeof global !== "undefined" ? global : this.window || this.global, function (root) {
 
   // constants
-  const countIterationsLimit = 50;
-  const minAllowedDistanceBetweenPointsMultiple = 1.5; // as a multiple of element radius
+  const countPoissonDistributionIterationsLimit = 50;
+  const minAllowedDistanceBetweenPointsMultiple = 1.3; // as a multiple of element radius
+  const initialPoissonRadiusMultiple = 1.8; // as a multiple of the element radius
+  const poissonRadiusAdjustmentMultiple = 0.05; // as a multiple of current radius
   const eventResponseDelay = 200;
   
   let containerElement,
@@ -30,15 +32,15 @@
       minViewportWidth = viewportWidth | 0;
       
       parentElement = containerElement.parentElement;
-      scatterElements = Array.from(containerElement.childNodes).filter(node => node.nodeType == Node.ELEMENT_NODE);
+      scatterElements = Array.from(containerElement.childNodes).filter(node => node.nodeType === Node.ELEMENT_NODE);
       countScatterElements = scatterElements.length;
-      exclusionZones = Array.from(parentElement.childNodes).filter(node => (node.nodeType == Node.ELEMENT_NODE && node != containerElement));
+      exclusionZones = Array.from(parentElement.childNodes).filter(node => (node.nodeType === Node.ELEMENT_NODE && node !== containerElement));
       
       // store original display css value (reapply later to revert back)
       containerElement.style.initialDisplay = getComputedStyle(containerElement).display;
       
-      // get particle dimensions (assume all particles are the same size)
-      // (do before everything is hidden)
+      // get particle dimensions (assume all particles are the same size) (do
+      // before everything is hidden)
       particleElementDimensions = scatterElements[0].getBoundingClientRect();
       scatterElementRadius = Math.sqrt(2 * Math.pow(
         (particleElementDimensions.width > particleElementDimensions.height ? 
@@ -68,8 +70,8 @@
       parentElement.classList.add('pretty-scatter__container');
       parentElement.style.height = containerElementDimensions.height + 'px';
 
-      // also get the boundaries of the exclusion zones here as they may
-      // vary based on viewport dimensions
+      // also get the boundaries of the exclusion zones here as they may vary
+      // based on viewport dimensions
       determineExclusionZoneBoundaries();
 
       // hide everything
@@ -78,8 +80,8 @@
       // find a good poisson distribution of points
       findBestPoissonDistribution();
     
-    // if viewport is below min width, revert classes and apply original display css
-    // property
+    // if viewport is below min width, revert classes and apply original display
+    // css property
     } else {
       restoreOriginalAppearance();
     }
@@ -96,15 +98,15 @@
       { name: 'bottom', parentCompare: 'height' },
       { name: 'left',   parentCompare: null  },
       { name: 'right',  parentCompare: 'width' }
-    ];
+      ];
     const countExclusionZones = exclusionZones.length;
     for (let zoneIndex = 0; zoneIndex < countExclusionZones; zoneIndex++) {
       let zone = exclusionZones[zoneIndex];
       zone.boundaries = utils.getBoundingAncestorRect(zone, zone.parentElement);
       
-      // any valid regions that are too small to fit a particle element,
-      // extend the exclusion zone to fill that region currently only
-      // evaluate regions between main field and each exclusion zone
+      // any valid regions that are too small to fit a particle element, extend
+      // the exclusion zone to fill that region currently only evaluate regions
+      // between main field and each exclusion zone
       for (let boundaryIndex = 0; boundaryIndex < 4; boundaryIndex++) {
         const boundary = boundaries[boundaryIndex];
         let parentBoundary = boundary.parentCompare ? containerElementDimensions[boundary.parentCompare] : 0;
@@ -127,12 +129,15 @@
     let poissonPoints = []
     
     // initial poisson radius
-    let poissonRadius = 2.5 * scatterElementRadius;
+    let poissonRadius = scatterElementRadius * initialPoissonRadiusMultiple;
     
-    // run poisson disc sampler until the returned number of particles is
-    // the same as the number of items we want to scatter or we exceed
-    // the number of iterations allowed
-    while (poissonPoints && countIterations < countIterationsLimit && poissonPoints.length != countScatterElements) {
+    // run poisson disc sampler until the returned number of particles is the
+    // same as the number of items we want to scatter or we exceed the number of
+    // iterations allowed
+    while (
+      countIterations < countPoissonDistributionIterationsLimit && 
+      poissonPoints.length !== countScatterElements
+      ) {
       poissonPoints = poissonDiscSampler(
         containerElementDimensions.width,
         containerElementDimensions.height,
@@ -141,28 +146,24 @@
         exclusionZones
       );
 
-      // if the returned number of particles doesn't match the number of
-      // scatter items, adjust the poisson radius to encourage a closer
-      // result next iteration
-      if (poissonPoints.length != countScatterElements) {
-        let radiusAdjustment = 0.1 * (poissonPoints.length - countScatterElements) / countScatterElements;
+      // if the returned number of particles doesn't match the number of scatter
+      // items, adjust the poisson radius to encourage a closer result next
+      // iteration
+      if (poissonPoints.length !== countScatterElements) {
+        let radiusAdjustment = poissonRadiusAdjustmentMultiple * (poissonPoints.length - countScatterElements) / countScatterElements;
         poissonRadius *= 1 + radiusAdjustment;
       }
       
       countIterations++;
     }
     
-    // if we exceeded the number of iterations without a solution or the
-    // successful poisson radius is too small, revert back to original
-    // display
+    // if we didn't exceed the number of iterations without a solution and the
+    // successful poisson radius larger than the minimum limit, rmove scatter
+    // items to final particle positions
     if (
-      poissonPoints.length != countScatterElements || 
-      poissonRadius < minAllowedDistanceBetweenPointsMultiple * scatterElementRadius
+      poissonPoints.length === countScatterElements &&
+      poissonRadius >= minAllowedDistanceBetweenPointsMultiple * scatterElementRadius
       ) {
-      restoreOriginalAppearance();
-    
-    // otherwise, move scatter items to final particle positions
-    } else {
       for (let i = 0; i < poissonPoints.length; i++) {
         let point = poissonPoints[i];
         let scatterElement = scatterElements[i];
@@ -173,6 +174,10 @@
 
       // show everything again
       containerElement.style.display = 'block';
+    
+    // otherwise, evert back to original display
+    } else {
+      restoreOriginalAppearance();
     }
   };
 
@@ -189,12 +194,19 @@
     const accepted = [];
 
     // Pick the first sample.
+    // make 20 tries before giving up and returning no points
     let x, y;
-    while (isNaN(x) || isNaN(y) || countExclusionZoneCollisions(x, y, exclusionZones) != 0) {
+    let firstSampleTries = 0;
+    while (firstSampleTries < 20 && isNaN(x) || isNaN(y) || countExclusionZoneCollisions(x, y, exclusionZones) !== 0) {
       x = pointSize + Math.random() * (width - 2 * pointSize);
       y = pointSize + Math.random() * (height - 2 * pointSize);
+      firstSampleTries++;
     }
-    sample(x, y, null);
+    if (countExclusionZoneCollisions(x, y, exclusionZones) === 0) {
+      sample(x, y, null);
+    } else {
+      return [];
+    }
 
     // Pick a random existing sample from the queue.
     pick: while (queue.length) {
@@ -210,11 +222,11 @@
         const x = parent[0] + r * Math.cos(a);
         const y = parent[1] + r * Math.sin(a);
 
-        // Accept candidates that are inside the allowed extent
-        // and farther than 2 * radius to all existing samples.
-        // and doesn't collide with any exclusion zones
+        // Accept candidates that are inside the allowed extent and farther than
+        // 2 * radius to all existing samples. and doesn't collide with any
+        // exclusion zones
         const countCollisions = countExclusionZoneCollisions(x, y, exclusionZones);
-        if (pointSize <= x && x < width - pointSize && pointSize <= y && y < height - pointSize && far(x, y) && countCollisions == 0) {
+        if (pointSize <= x && x < width - pointSize && pointSize <= y && y < height - pointSize && far(x, y) && countCollisions === 0) {
           sample(x, y, parent);
           continue pick;
         }
@@ -223,7 +235,7 @@
       // If none of k candidates were accepted, remove it from the queue.
       const r = queue.pop();
       if (i < queue.length) queue[i] = r;
-      accepted.filter(point => point == parent);
+      accepted.filter(point => point === parent);
     }
     return accepted;
 
@@ -265,7 +277,7 @@
 
     function isPositionInsideBox(x, y, box) {
       let isInside;
-      if (!isNaN(x) && !isNaN(y)) {
+      if (!isNaN(x) && !isNaN(y) && box && utils.isPropertiesDefined(box, ['left', 'right', 'top', 'bottom'])) {
         isInside = (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom);
       }
       return isInside;
@@ -273,27 +285,63 @@
   }
 
   const utils = {
-    // similar to Element.getBoundingClientRect() and returns the same set
-    // of values but with the origin being an arbitrary ancestor of the
-    // element as opposed to the viewport
-    getBoundingAncestorRect: (element, ancestor) => {
-      const boundingClientRect = element.getBoundingClientRect();
-      const ancestorBoundingClientRect = ancestor.getBoundingClientRect();
-      const boundingParentRect = {
-        width: boundingClientRect.width,
-        height: boundingClientRect.height,
-        top: boundingClientRect.top - ancestorBoundingClientRect.top,
-        bottom: boundingClientRect.bottom - ancestorBoundingClientRect.top,
-        left: boundingClientRect.left - ancestorBoundingClientRect.left,
-        right: boundingClientRect.right - ancestorBoundingClientRect.left
-      };
-      boundingParentRect.x = boundingParentRect.left;
-      boundingParentRect.y = boundingParentRect.top;
-      return boundingParentRect;
+    /**
+     * Similar to Element.getBoundingClientRect() and returns the same set of
+     * values but with the origin being an arbitrary ancestor of the element as
+     * opposed to the viewport
+     *
+     * @param {HTMLElement} element The element of interest
+     * @param {HTMLElement} ancestor The reference ancestor element
+     * @return {DOMRect} Object with properties width, height, top, bottom,
+     *  left, right, x, y
+     */
+     getBoundingAncestorRect: (element, ancestor) => {
+      if (ancestor.contains(element)) {
+        const boundingClientRect = element.getBoundingClientRect();
+        const ancestorBoundingClientRect = ancestor.getBoundingClientRect();
+        const boundingParentRect = {
+          width: boundingClientRect.width,
+          height: boundingClientRect.height,
+          top: boundingClientRect.top - ancestorBoundingClientRect.top,
+          bottom: boundingClientRect.bottom - ancestorBoundingClientRect.top,
+          left: boundingClientRect.left - ancestorBoundingClientRect.left,
+          right: boundingClientRect.right - ancestorBoundingClientRect.left
+          };
+        boundingParentRect.x = boundingParentRect.left;
+        boundingParentRect.y = boundingParentRect.top;
+        return boundingParentRect;
+      }
     },
 
+    /**
+     * Browser-independent way to get the viewport width.
+     *
+     * @return {Number}
+     */
     getViewportWidth: () => {
       return Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+    },
+
+    /**
+     * Check that a list of properties are defined (regardless of value ) for
+     * an object.
+     *
+     * @param {Object} obj The parent object of the properties
+     * @param {Array of Strings} propList The list of property names
+     * @return {Boolean}
+     */
+    isPropertiesDefined: (obj, propList) => {
+      let isAllDefined = true;
+      if (typeof obj === 'object' && propList.constructor === Array) {
+        const countProps = propList.length;
+        for (let i = 0; i < countProps; i++) {
+          if (typeof obj[propList[i]] === 'undefined') {
+            isAllDefined = false;
+            break;
+          }
+        }
+      }
+      return isAllDefined;
     }
   };
 

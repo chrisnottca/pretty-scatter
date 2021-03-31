@@ -1,6 +1,6 @@
 {
   "name": "pretty-scatter",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Arranges html elements of a common parent in a blue noise pattern so they look randomly yet equally scattered over a space.",
   "main": "pretty-scatter.js",
   "scripts": {
